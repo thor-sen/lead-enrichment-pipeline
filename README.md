@@ -14,8 +14,11 @@ This pipeline sits between the CRM data connector (which pulls raw records) and 
 
 ## Key Design Decisions
 
-- **HubSpot-first merge strategy** — When both HubSpot and PDL have data for the same field, HubSpot wins. PDL only fills gaps. This prevents external data from overwriting manually curated CRM values.
-- **Domain-based deduplication with completeness scoring** — When duplicates exist for the same domain, the record with the most non-null fields is kept. Simple heuristic, but effective for catching records that failed enrichment.
+**I built the full PDL integration even without a funded key.** The enrichment function makes live calls to PDL's company enrichment endpoint with proper auth, error handling, and write-back to HubSpot. Without a valid key, companies get marked `enrichment_status: failed` and the pipeline moves on. The HubSpot pull and write-back logic run independently of PDL. That's deliberate. Someone could drop in a funded key and the pipeline would enrich 204 real companies immediately. No code changes required.
+
+**HubSpot is the source of truth. PDL fills gaps.** When HubSpot and PDL both have a value for a field (company size, industry, revenue), HubSpot wins. The logic is simple: if HubSpot has a value, keep it. If HubSpot has null, write PDL's value. This prevents a third-party API from overwriting rep-maintained CRM data. Reps trust what they see in HubSpot, so PDL has to supplement rather than replace.
+
+**Deduplication happens before write-back, not during fetch.** I pull the full enrichment batch first, deduplicate against HubSpot records, then write back. If enrichment fails mid-batch, no partial write. The alternative (write as you go) is faster but leaves the CRM in an inconsistent state if the job crashes. I'd rather re-run the whole pipeline than clean up half-written data.
 
 ## Architecture Overview
 
